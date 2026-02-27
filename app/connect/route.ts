@@ -2,7 +2,15 @@ import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 
-const CONNECT_PATH = '/api/stripe/connect'
+const DEFAULT_POST_CONNECT_PATH = '/dashboard/leaks'
+const CONNECT_PATH = `/api/stripe/connect?next=${encodeURIComponent(DEFAULT_POST_CONNECT_PATH)}`
+
+function sanitizeRelativePath(path: string | null, fallback: string) {
+  if (!path) return fallback
+  const normalized = path.trim()
+  if (!normalized.startsWith('/') || normalized.startsWith('//')) return fallback
+  return normalized
+}
 
 function clearSupabaseCookies(cookieStore: Awaited<ReturnType<typeof cookies>>, response: NextResponse) {
   cookieStore.getAll().forEach(cookie => {
@@ -19,7 +27,7 @@ function clearSupabaseCookies(cookieStore: Awaited<ReturnType<typeof cookies>>, 
 
 export async function GET(req: Request) {
   const url = new URL(req.url)
-  const target = url.searchParams.get('redirect') || CONNECT_PATH
+  const target = sanitizeRelativePath(url.searchParams.get('redirect'), CONNECT_PATH)
 
   const cookieStore = await cookies()
   const hasSupabaseCookie = cookieStore.getAll().some(cookie => cookie.name.startsWith('sb-'))

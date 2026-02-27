@@ -5,7 +5,7 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const code = url.searchParams.get("code");
-  const redirectTo = url.searchParams.get("redirectTo") ?? "/onboarding";
+  const redirectTo = url.searchParams.get("redirectTo") ?? "/dashboard/leaks";
 
   if (code) {
     const supabase = await getSupabaseServerClient();

@@ -9,6 +9,8 @@ import {
 } from '@/lib/validation-schemas'
 import { getStripeServerClient, getSupabaseAdminClient } from '@/lib/server-clients'
 
+const DEFAULT_POST_CONNECT_PATH = '/dashboard/leaks'
+
 function normalizeBaseUrl(url: string) {
   return url.trim().replace(/\/+$/, '')
 }
@@ -29,6 +31,27 @@ function getStripeConnectClientId() {
   return clientId
 }
 
+function sanitizeRelativePath(path: string | null | undefined, fallback = DEFAULT_POST_CONNECT_PATH) {
+  if (!path) return fallback
+  const normalized = path.trim()
+  if (!normalized.startsWith('/') || normalized.startsWith('//')) return fallback
+  return normalized
+}
+
+function encodeOAuthState(postConnectPath: string) {
+  return Buffer.from(JSON.stringify({ next: postConnectPath }), 'utf8').toString('base64url')
+}
+
+function decodeOAuthState(state: string | undefined) {
+  if (!state) return null
+  try {
+    const parsed = JSON.parse(Buffer.from(state, 'base64url').toString('utf8')) as { next?: string }
+    return sanitizeRelativePath(parsed?.next || null)
+  } catch {
+    return null
+  }
+}
+
 function getStripeConnectRedirectUri(req: NextRequest, appUrl: string) {
   const explicitRedirectUri = process.env.STRIPE_CONNECT_REDIRECT_URI?.trim()
   if (explicitRedirectUri) {
@@ -41,6 +64,9 @@ export async function GET(req: NextRequest) {
   const rateLimitResponse = await withRateLimit(req, 'oauth')
   if (rateLimitResponse) return rateLimitResponse
 
+  const requestedNextPath = req.nextUrl.searchParams.get('next')
+  const postConnectPath = sanitizeRelativePath(requestedNextPath, DEFAULT_POST_CONNECT_PATH)
+
   // Require authenticated user for both start + callback
   const supabase = await createServerSupabaseClient()
   const {
@@ -52,19 +78,20 @@ export async function GET(req: NextRequest) {
     const appUrl = getBaseUrl(req)
     const loginUrl = new URL('/login', appUrl)
     loginUrl.searchParams.set('error', 'auth_required')
-    loginUrl.searchParams.set('redirect', '/api/stripe/connect')
+    const connectPathWithNext = `/api/stripe/connect?next=${encodeURIComponent(postConnectPath)}`
+    loginUrl.searchParams.set('redirect', connectPathWithNext)
     return NextResponse.redirect(loginUrl, { status: 302 })
   }
 
   try {
-    const { code, error, error_description } = validateQueryParams(
+    const { code, state, error, error_description } = validateQueryParams(
       req.url,
       StripeConnectCallbackSchema
     )
 
     if (error) {
       const appUrl = getBaseUrl(req)
-      const url = new URL('/', appUrl)
+      const url = new URL(postConnectPath, appUrl)
       url.searchParams.set('error', 'stripe_connection_failed')
       url.searchParams.set('details', error_description || error)
       return NextResponse.redirect(url, { status: 302 })
@@ -73,27 +100,28 @@ export async function GET(req: NextRequest) {
     if (!code) {
       const appUrl = getBaseUrl(req)
       const redirectUri = getStripeConnectRedirectUri(req, appUrl)
-      return initiateOAuthFlow(appUrl, redirectUri)
+      return initiateOAuthFlow(appUrl, redirectUri, postConnectPath)
     }
 
     const appUrl = getBaseUrl(req)
-    return handleOAuthCallback(code, user.id, appUrl)
+    const callbackRedirectPath = decodeOAuthState(state) || postConnectPath
+    return handleOAuthCallback(code, user.id, appUrl, callbackRedirectPath)
   } catch (error) {
     if (error instanceof ValidationError) {
       const appUrl = getBaseUrl(req)
-      const url = new URL('/', appUrl)
+      const url = new URL(postConnectPath, appUrl)
       url.searchParams.set('error', 'invalid_oauth_params')
       return NextResponse.redirect(url, { status: 302 })
     }
 
     const appUrl = getBaseUrl(req)
-    const url = new URL('/', appUrl)
+    const url = new URL(postConnectPath, appUrl)
     url.searchParams.set('error', 'oauth_failed')
     return NextResponse.redirect(url, { status: 302 })
   }
 }
 
-async function initiateOAuthFlow(appUrl: string, redirectUri: string) {
+async function initiateOAuthFlow(appUrl: string, redirectUri: string, postConnectPath: string) {
   try {
     const url = new URL('https://connect.stripe.com/oauth/authorize')
     const clientId = getStripeConnectClientId()
@@ -102,18 +130,24 @@ async function initiateOAuthFlow(appUrl: string, redirectUri: string) {
     url.searchParams.set('client_id', clientId)
     url.searchParams.set('scope', 'read_write')
     url.searchParams.set('redirect_uri', redirectUri)
+    url.searchParams.set('state', encodeOAuthState(postConnectPath))
 
     return NextResponse.redirect(url.toString())
   } catch (error) {
     console.error('Failed to initiate Stripe connection:', error)
-    const url = new URL('/onboarding', appUrl)
+    const url = new URL(postConnectPath, appUrl)
     url.searchParams.set('error', 'stripe_config_missing')
     url.searchParams.set('details', 'Check STRIPE_CLIENT_ID and STRIPE_CONNECT_REDIRECT_URI')
     return NextResponse.redirect(url, { status: 302 })
   }
 }
 
-async function handleOAuthCallback(code: string, userId: string, appUrl: string) {
+async function handleOAuthCallback(
+  code: string,
+  userId: string,
+  appUrl: string,
+  postConnectPath: string
+) {
   try {
     const stripe = getStripeServerClient()
     const supabaseAdmin = getSupabaseAdminClient()
@@ -217,14 +251,15 @@ async function handleOAuthCallback(code: string, userId: string, appUrl: string)
       console.log(`🔄 Triggered background sync for connection: ${newConnection.id}`)
     }
 
-    const successUrl = new URL('/', appUrl)
+    const successUrl = new URL(postConnectPath, appUrl)
     successUrl.searchParams.set('connected', 'true')
     successUrl.searchParams.set('account', stripe_user_id)
+    successUrl.searchParams.set('run_scan', '1')
     return NextResponse.redirect(successUrl, { status: 302 })
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : 'Unknown error'
-    const url = new URL('/', appUrl)
+    const url = new URL(postConnectPath, appUrl)
     url.searchParams.set('error', 'connection_failed')
     url.searchParams.set('details', errorMessage)
     return NextResponse.redirect(url, { status: 302 })

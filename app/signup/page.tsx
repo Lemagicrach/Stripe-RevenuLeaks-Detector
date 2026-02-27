@@ -14,14 +14,22 @@ function SignUpContent() {
   const searchParams = useSearchParams()
   const supabase = getBrowserSupabaseClient()
 
+  const rawRedirect = searchParams?.get('redirect')
+  const redirectPath = rawRedirect ? decodeURIComponent(rawRedirect) : null
+
   // Plan parameter for selecting a pricing tier (optional)
   const planParam = searchParams?.get('plan')
 
-  // Always redirect new sign‑ups to onboarding. If a plan is specified,
-  // include it as a query parameter so that onboarding can pick up the chosen tier.
-  const finalRedirect = planParam
+  // Keep explicit redirect intent (e.g. /api/stripe/connect for scan CTA).
+  // Fallback to onboarding when no redirect was provided.
+  const onboardingRedirect = planParam
     ? `/onboarding?plan=${encodeURIComponent(planParam)}`
     : '/onboarding'
+  const finalRedirect = redirectPath || onboardingRedirect
+
+  const loginHref = finalRedirect
+    ? `/login?redirect=${encodeURIComponent(finalRedirect)}`
+    : '/login'
 
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
@@ -67,7 +75,7 @@ function SignUpContent() {
 
       toast.success('Account created! Check your email to verify.')
 
-      // Redirect the new user to onboarding immediately. Include plan param if provided.
+      // Redirect new users to the requested flow, or onboarding by default.
       router.push(finalRedirect)
     } catch (error: any) {
       toast.error(error.message || 'Failed to create account')
@@ -243,7 +251,7 @@ function SignUpContent() {
 
         <p className="mt-6 text-center text-sm text-gray-600">
           Already have an account?{' '}
-          <Link href="/login" className="text-indigo-600 hover:text-indigo-700 hover:underline font-medium">
+          <Link href={loginHref} className="text-indigo-600 hover:text-indigo-700 hover:underline font-medium">
             Sign in
           </Link>
         </p>

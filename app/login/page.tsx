@@ -19,7 +19,7 @@ function LoginContent() {
   const [formData, setFormData] = useState({ email: '', password: '' })
 
   const rawRedirect = searchParams?.get('redirect')
-  const redirectPath = rawRedirect ? decodeURIComponent(rawRedirect) : '/dashboard'
+  const redirectPath = rawRedirect ? decodeURIComponent(rawRedirect) : '/dashboard/leaks'
   const planParam = searchParams?.get('plan')
   const finalRedirect =
     redirectPath && planParam ? `${redirectPath}?plan=${planParam}` : redirectPath
@@ -56,7 +56,7 @@ function LoginContent() {
       if (error) throw error
 
       toast.success('Welcome back!')
-      router.push(finalRedirect || '/dashboard')
+      router.push(finalRedirect || '/dashboard/leaks')
       router.refresh()
     } catch (error: any) {
       toast.error(error.message || 'Failed to sign in')
@@ -76,7 +76,7 @@ function LoginContent() {
         provider,
         options: {
           redirectTo: `${window.location.origin}/auth/callback?redirectTo=${encodeURIComponent(
-            finalRedirect || '/dashboard'
+            finalRedirect || '/dashboard/leaks'
           )}`,
         }
       })

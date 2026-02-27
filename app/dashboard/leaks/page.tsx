@@ -32,6 +32,14 @@ export default function RevenueLeaksPage() {
   const [recoveredByType7, setRecoveredByType7] = useState<Record<string, number>>({})
   const [settingUpWebhook, setSettingUpWebhook] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  const [autoScanHandled, setAutoScanHandled] = useState(false)
+  const [shouldAutoScan, setShouldAutoScan] = useState(false)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const query = new URLSearchParams(window.location.search)
+    setShouldAutoScan(query.get('run_scan') === '1')
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -215,6 +223,15 @@ export default function RevenueLeaksPage() {
       setRunningScan(false)
     }
   }
+
+  useEffect(() => {
+    if (!shouldAutoScan || autoScanHandled || loading || runningScan) return
+
+    setAutoScanHandled(true)
+    setNotice('Stripe connected. Running initial revenue leak scan...')
+    void runScan()
+    router.replace('/dashboard/leaks')
+  }, [autoScanHandled, loading, router, runningScan, shouldAutoScan, runScan])
 
   async function emailReport() {
     try {
