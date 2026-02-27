@@ -1,0 +1,372 @@
+import Stripe from "stripe";
+import { headers } from "next/headers";
+import { createClient } from "@supabase/supabase-js";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: "2023-10-16",
+});
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_KEY! // ✅ use SUPABASE_SERVICE_KEY (service role)
+);
+
+// Helper function to map Stripe price ID to subscription tier
+function getSubscriptionTier(priceId: string): string {
+  const tierMap: Record<string, string> = {
+    [process.env.STRIPE_REV_PILOT_PRO_PRICE_ID!]: 'pro',
+    [process.env.STRIPE_REV_PILOT_BUSINESS_PRICE_ID!]: 'business',
+  }
+
+  return tierMap[priceId] || 'starter'
+}
+
+
+// Helper function to get scenario limit based on tier
+function getScenarioLimit(tier: string): number | null {
+  const limits: Record<string, number | null> = {
+    'starter': 0,
+    'pro': 3,
+    'business': null, // null = unlimited
+  };
+  
+  return limits[tier] ?? 0;
+}
+
+export async function POST(req: Request) {
+  const sig = (await headers()).get("stripe-signature");
+  if (!sig) return new Response("Missing signature", { status: 400 });
+
+  const rawBody = await req.text();
+  let event: Stripe.Event;
+
+  // 1️⃣ Verify Stripe signature
+  try {
+    event = stripe.webhooks.constructEvent(
+      rawBody,
+      sig,
+      process.env.STRIPE_WEBHOOK_SECRET!
+    );
+  } catch (err: any) {
+    console.error("❌ Signature verification failed:", err.message);
+    return new Response(`Webhook Error: ${err.message}`, { status: 400 });
+  }
+
+  try {
+    // 2️⃣ Process Stripe events
+    switch (event.type) {
+      // 🔹 New checkout completed
+      case "checkout.session.completed": {
+        const session = event.data.object as Stripe.Checkout.Session;
+        const subscriptionId = session.subscription as string;
+        const customerId = session.customer as string;
+        const email = session.customer_email;
+
+        console.log("💰 Checkout completed:", subscriptionId);
+
+        // Get subscription details to determine tier
+        const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+        const priceId = subscription.items.data[0]?.price.id;
+        const tier = getSubscriptionTier(priceId);
+        const scenarioLimit = getScenarioLimit(tier);
+
+        // Find user by email in user_profiles table (supabase admin API does not provide getUserByEmail)
+        const { data: profileByEmail } = await supabase
+          .from("user_profiles")
+          .select("user_id")
+          .eq("email", email)
+          .single();
+        
+        if (profileByEmail?.user_id) {
+          // Update user_profiles with subscription info
+          await supabase.from("user_profiles").upsert({
+            user_id: profileByEmail.user_id,
+            subscription_tier: tier,
+            subscription_status: 'active',
+            stripe_customer_id: customerId,
+            stripe_subscription_id: subscriptionId,
+            subscription_current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+            monthly_scenario_limit: scenarioLimit,
+            updated_at: new Date().toISOString(),
+          }, {
+            onConflict: 'user_id'
+          });
+
+          console.log(`✅ Updated user_profiles for ${email} to ${tier} tier`);
+        } else {
+          console.log(`ℹ️ No user_profile found for ${email}, skipping user_profiles update`);
+        }
+
+        // Keep your existing user_subscriptions table for backward compatibility
+        await supabase.from("user_subscriptions").upsert({
+          stripe_customer_id: customerId,
+          stripe_subscription_id: subscriptionId,
+          email,
+          status: "active",
+          subscription_synced_at: new Date().toISOString(),
+          subscription_updated_at: new Date().toISOString(),
+        });
+
+        // Log the event
+        await supabase.from("subscription_events").insert({
+          event_type: "checkout.session.completed",
+          stripe_subscription_id: subscriptionId,
+          customer_id: customerId,
+          email,
+          created_at: new Date().toISOString(),
+        });
+
+        break;
+      }
+
+            // 🔹 Subscription created
+      case "customer.subscription.created": {
+        const subscription = event.data.object as Stripe.Subscription;
+        const customerId = subscription.customer as string;
+        const priceId = subscription.items.data[0]?.price.id;
+        const tier = getSubscriptionTier(priceId);
+        const scenarioLimit = getScenarioLimit(tier);
+
+        console.log(`📝 Subscription created:`, subscription.id);
+
+        // Find user by stripe_customer_id
+        const { data: profile } = await supabase
+          .from("user_profiles")
+          .select("user_id")
+          .eq("stripe_customer_id", customerId)
+          .single();
+
+        if (profile) {
+          // Update user_profiles with correct tier and subscription info
+          await supabase
+            .from("user_profiles")
+            .update({
+              subscription_tier: tier,
+              subscription_status: subscription.status,
+              stripe_subscription_id: subscription.id,
+              subscription_current_period_end: new Date(
+                subscription.current_period_end * 1000
+              ).toISOString(),
+              monthly_scenario_limit: scenarioLimit,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("user_id", profile.user_id);
+
+          // Insert (or upsert) into user_subscriptions
+          await supabase
+            .from("user_subscriptions")
+            .upsert(
+              {
+                stripe_customer_id: customerId,
+                stripe_subscription_id: subscription.id,
+                status: subscription.status,
+                subscription_synced_at: new Date().toISOString(),
+                subscription_updated_at: new Date().toISOString(),
+              },
+              { onConflict: "stripe_subscription_id" }
+            );
+
+          console.log(`✅ Set user to ${tier} tier and recorded subscription`);
+        }
+
+        // Log the event
+        await supabase.from("subscription_events").insert({
+          event_type: "customer.subscription.created",
+          stripe_subscription_id: subscription.id,
+          customer_id: customerId,
+          created_at: new Date().toISOString(),
+        });
+
+        break;
+      }
+
+      // 🔹 Subscription updated
+      case "customer.subscription.updated": {
+        const subscription = event.data.object as Stripe.Subscription;
+        const customerId = subscription.customer as string;
+        const priceId = subscription.items.data[0]?.price.id;
+        const tier = getSubscriptionTier(priceId);
+        const scenarioLimit = getScenarioLimit(tier);
+
+        console.log(`📝 Subscription updated:`, subscription.id);
+
+        // Find user by stripe_customer_id
+        const { data: profile } = await supabase
+          .from("user_profiles")
+          .select("user_id")
+          .eq("stripe_customer_id", customerId)
+          .single();
+
+        if (profile) {
+          // Update user_profiles
+          await supabase
+            .from("user_profiles")
+            .update({
+              subscription_tier: tier,
+              subscription_status: subscription.status,
+              stripe_subscription_id: subscription.id,
+              subscription_current_period_end: new Date(
+                subscription.current_period_end * 1000
+              ).toISOString(),
+              monthly_scenario_limit: scenarioLimit,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("user_id", profile.user_id);
+
+          console.log(`✅ Updated user to ${tier} tier`);
+        }
+
+        // Update user_subscriptions
+        await supabase
+          .from("user_subscriptions")
+          .update({
+            status: subscription.status,
+            subscription_updated_at: new Date().toISOString(),
+          })
+          .eq("stripe_subscription_id", subscription.id);
+
+        // Log the event
+        await supabase.from("subscription_events").insert({
+          event_type: "customer.subscription.updated",
+          stripe_subscription_id: subscription.id,
+          customer_id: customerId,
+          created_at: new Date().toISOString(),
+        });
+
+        break;
+      }
+
+      // 🔹 Invoice paid (renewal or first payment)
+      case "invoice.paid": {
+        const invoice = event.data.object as Stripe.Invoice;
+        const sub = invoice.subscription as string;
+        const customer = invoice.customer as string;
+
+        console.log("✅ Invoice paid:", invoice.id);
+
+        // Update subscriptions_cache (keep for analytics)
+        await supabase.from("subscriptions_cache").upsert({
+          stripe_subscription_id: sub,
+          customer_id: customer,
+          amount_paid: invoice.amount_paid,
+          currency: invoice.currency,
+          status: invoice.status,
+          current_period_end: new Date(invoice.lines.data[0]?.period?.end * 1000),
+          current_period_start: new Date(invoice.lines.data[0]?.period?.start * 1000),
+          updated_at: new Date().toISOString(),
+        });
+
+        // Update user_profiles status to active (in case it was past_due)
+        const { data: profile } = await supabase
+          .from("user_profiles")
+          .select("user_id")
+          .eq("stripe_customer_id", customer)
+          .single();
+
+        if (profile) {
+          await supabase.from("user_profiles").update({
+            subscription_status: 'active',
+            updated_at: new Date().toISOString(),
+          }).eq("user_id", profile.user_id);
+        }
+
+        // Log the event
+        await supabase.from("subscription_events").insert({
+          event_type: "invoice.paid",
+          stripe_subscription_id: sub,
+          customer_id: customer,
+          invoice_id: invoice.id,
+          created_at: new Date().toISOString(),
+        });
+
+        break;
+      }
+
+      // 🔹 Invoice payment failed
+      case "invoice.payment_failed": {
+        const invoice = event.data.object as Stripe.Invoice;
+        const customer = invoice.customer as string;
+
+        console.log("⚠️ Invoice payment failed:", invoice.id);
+
+        // Update user_profiles status to past_due
+        const { data: profile } = await supabase
+          .from("user_profiles")
+          .select("user_id")
+          .eq("stripe_customer_id", customer)
+          .single();
+
+        if (profile) {
+          await supabase.from("user_profiles").update({
+            subscription_status: 'past_due',
+            updated_at: new Date().toISOString(),
+          }).eq("user_id", profile.user_id);
+        }
+
+        // Log the event
+        await supabase.from("subscription_events").insert({
+          event_type: "invoice.payment_failed",
+          stripe_subscription_id: invoice.subscription as string,
+          customer_id: customer,
+          invoice_id: invoice.id,
+          created_at: new Date().toISOString(),
+        });
+
+        break;
+      }
+
+      // 🔹 Subscription canceled
+      case "customer.subscription.deleted": {
+        const sub = event.data.object as Stripe.Subscription;
+        console.log("⚠️ Subscription canceled:", sub.id);
+
+        // Downgrade user to starter tier
+        const { data: profile } = await supabase
+          .from("user_profiles")
+          .select("user_id")
+          .eq("stripe_subscription_id", sub.id)
+          .single();
+
+        if (profile) {
+          await supabase.from("user_profiles").update({
+            subscription_tier: 'starter',
+            subscription_status: 'canceled',
+            monthly_scenario_limit: 0,
+            updated_at: new Date().toISOString(),
+          }).eq("user_id", profile.user_id);
+
+          console.log(`✅ Downgraded user to starter tier`);
+        }
+
+        // Update user_subscriptions
+        await supabase.from("user_subscriptions").update({
+          status: "canceled",
+          subscription_updated_at: new Date().toISOString(),
+        }).eq("stripe_subscription_id", sub.id);
+
+        // Log the event
+        await supabase.from("subscription_events").insert({
+          event_type: "customer.subscription.deleted",
+          stripe_subscription_id: sub.id,
+          customer_id: sub.customer as string,
+          created_at: new Date().toISOString(),
+        });
+
+        break;
+      }
+
+      default:
+        console.log("ℹ️ Unhandled event:", event.type);
+    }
+
+    // 3️⃣ Return success
+    return new Response("ok", { status: 200 });
+  } catch (error: any) {
+    console.error("❌ Webhook handler failed:", error.message);
+    console.error("Stack:", error.stack);
+    return new Response("Internal error", { status: 500 });
+  }
+}

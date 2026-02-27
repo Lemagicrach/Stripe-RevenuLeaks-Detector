@@ -1,0 +1,27 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGradient" x1="72" y1="72" x2="440" y2="440" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B1220" />
+      <stop offset="1" stop-color="#13213A" />
+    </linearGradient>
+    <linearGradient id="accentGradient" x1="246" y1="298" x2="364" y2="370" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#00D2FF" />
+      <stop offset="1" stop-color="#4DE7B9" />
+    </linearGradient>
+  </defs>
+  <rect x="40" y="40" width="432" height="432" rx="104" fill="url(#bgGradient)" />
+  <path
+    d="M162 364V152H256C311 152 351 190 351 238C351 286 311 324 256 324H162"
+    stroke="#F8FAFC"
+    stroke-width="42"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M252 300L346 364"
+    stroke="url(#accentGradient)"
+    stroke-width="42"
+    stroke-linecap="round"
+  />
+  <circle cx="362" cy="150" r="18" fill="url(#accentGradient)" />
+</svg>

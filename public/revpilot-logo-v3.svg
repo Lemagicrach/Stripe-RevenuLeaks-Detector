@@ -1,0 +1,31 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="v3Bg" x1="70" y1="58" x2="442" y2="454" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0E172A" />
+      <stop offset="1" stop-color="#1D2F4D" />
+    </linearGradient>
+    <linearGradient id="v3Accent" x1="245" y1="286" x2="360" y2="380" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#22D3EE" />
+      <stop offset="1" stop-color="#2BF6A6" />
+    </linearGradient>
+  </defs>
+
+  <rect x="40" y="40" width="432" height="432" rx="108" fill="url(#v3Bg)" />
+
+  <path
+    d="M162 360V154H244C299 154 339 191 339 238C339 285 299 322 244 322H162"
+    stroke="#F8FAFC"
+    stroke-width="38"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <path
+    d="M238 294L346 366"
+    stroke="url(#v3Accent)"
+    stroke-width="36"
+    stroke-linecap="round"
+  />
+
+  <circle cx="356" cy="146" r="14" fill="url(#v3Accent)" />
+</svg>
