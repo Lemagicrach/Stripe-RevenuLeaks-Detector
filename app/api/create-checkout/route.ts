@@ -3,6 +3,7 @@ import Stripe from 'stripe'
 import { getSupabaseServerClient as createServerSupabaseClient } from '@/lib/supabase/server'
 import { withRateLimit } from '@/lib/rate-limit'
 import { handleApiError } from '@/lib/server-error'
+import { sanitizePlanId } from '@/lib/plan-flow'
 
 // Initialise Stripe with secret key. The API version should match your Stripe account settings.
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
@@ -43,10 +44,12 @@ export async function POST(req: NextRequest) {
     } catch {
       return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
     }
-    const plan: string | undefined = body?.plan
-    if (!plan || typeof plan !== 'string') {
+    const rawPlan: string | undefined = body?.plan
+    if (!rawPlan || typeof rawPlan !== 'string') {
       return NextResponse.json({ error: 'Plan is required' }, { status: 400 })
     }
+    const normalizedPaidPlan = sanitizePlanId(rawPlan)
+    const plan = normalizedPaidPlan || rawPlan.trim().toLowerCase()
 
     // Determine the Stripe price ID from environment variables
     const planKey = plan.toUpperCase()
@@ -61,8 +64,17 @@ export async function POST(req: NextRequest) {
 
     // Build success and cancel URLs based on the request origin
     const origin = req.headers.get('origin') || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-    const successUrl = `${origin}/dashboard?checkoutSuccess=1`
-    const cancelUrl = `${origin}/dashboard?checkoutCancelled=1`
+    const appUrl = origin.replace(/\/+$/, '')
+    const successUrl = new URL('/dashboard/leaks', appUrl)
+    successUrl.searchParams.set('checkoutSuccess', '1')
+    if (normalizedPaidPlan) {
+      successUrl.searchParams.set('intent_plan', normalizedPaidPlan)
+    }
+    const cancelUrl = new URL('/dashboard/leaks', appUrl)
+    cancelUrl.searchParams.set('checkoutCancelled', '1')
+    if (normalizedPaidPlan) {
+      cancelUrl.searchParams.set('intent_plan', normalizedPaidPlan)
+    }
 
     // Create the Stripe checkout session
     const session = await stripe.checkout.sessions.create({
@@ -80,8 +92,8 @@ export async function POST(req: NextRequest) {
         user_id: user.id,
         plan,
       },
-      success_url: successUrl,
-      cancel_url: cancelUrl,
+      success_url: successUrl.toString(),
+      cancel_url: cancelUrl.toString(),
     })
 
     return NextResponse.json({ url: session.url }, { status: 200 })

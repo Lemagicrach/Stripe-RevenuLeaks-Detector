@@ -7,6 +7,7 @@ import { LeakCard, type RevenueLeak } from '@/components/leaks/LeakCard'
 import { ActionCenter } from '@/components/leaks/ActionCenter'
 import { Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { getPaidPlanLabel, sanitizePlanId, type PaidPlanId } from '@/lib/plan-flow'
 
 type Connection = {
   id: string
@@ -32,13 +33,28 @@ export default function RevenueLeaksPage() {
   const [recoveredByType7, setRecoveredByType7] = useState<Record<string, number>>({})
   const [settingUpWebhook, setSettingUpWebhook] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  const [checkoutStatusNotice, setCheckoutStatusNotice] = useState<string | null>(null)
   const [autoScanHandled, setAutoScanHandled] = useState(false)
   const [shouldAutoScan, setShouldAutoScan] = useState(false)
+  const [intentPlan, setIntentPlan] = useState<PaidPlanId | null>(null)
+  const [dismissedPlanPrompt, setDismissedPlanPrompt] = useState(false)
+  const [startingTrial, setStartingTrial] = useState(false)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
     const query = new URLSearchParams(window.location.search)
+    const nextIntentPlan = sanitizePlanId(query.get('intent_plan'))
+
+    setIntentPlan(nextIntentPlan)
     setShouldAutoScan(query.get('run_scan') === '1')
+    setDismissedPlanPrompt(false)
+
+    if (query.get('checkoutSuccess') === '1') {
+      setCheckoutStatusNotice('Trial started successfully. You can continue scanning and reviewing leaks below.')
+      setDismissedPlanPrompt(true)
+    } else if (query.get('checkoutCancelled') === '1') {
+      setCheckoutStatusNotice('Checkout was cancelled. Your leak scanner stays fully available.')
+    }
   }, [])
 
   useEffect(() => {
@@ -224,14 +240,53 @@ export default function RevenueLeaksPage() {
     }
   }
 
+  async function startTrialCheckout() {
+    if (!intentPlan) return
+
+    try {
+      setStartingTrial(true)
+      setError(null)
+      setNotice(null)
+
+      const res = await fetch('/api/create-checkout', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ plan: intentPlan }),
+      })
+
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        if (res.status === 401) {
+          const redirectPath = `/dashboard/leaks?intent_plan=${encodeURIComponent(intentPlan)}`
+          router.push(`/login?redirect=${encodeURIComponent(redirectPath)}`)
+          return
+        }
+        throw new Error(json?.error || 'Could not start checkout')
+      }
+
+      if (!json?.url) {
+        throw new Error('No checkout URL received')
+      }
+
+      window.location.href = json.url
+    } catch (e: any) {
+      setError(e?.message || 'Could not start checkout')
+    } finally {
+      setStartingTrial(false)
+    }
+  }
+
   useEffect(() => {
     if (!shouldAutoScan || autoScanHandled || loading || runningScan) return
 
     setAutoScanHandled(true)
     setNotice('Stripe connected. Running initial revenue leak scan...')
     void runScan()
-    router.replace('/dashboard/leaks')
-  }, [autoScanHandled, loading, router, runningScan, shouldAutoScan, runScan])
+    const params = new URLSearchParams()
+    if (intentPlan) params.set('intent_plan', intentPlan)
+    const nextPath = params.toString() ? `/dashboard/leaks?${params.toString()}` : '/dashboard/leaks'
+    router.replace(nextPath)
+  }, [autoScanHandled, intentPlan, loading, router, runningScan, shouldAutoScan, runScan])
 
   async function emailReport() {
     try {
@@ -346,6 +401,39 @@ export default function RevenueLeaksPage() {
       {notice && !error && (
         <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
           {notice}
+        </div>
+      )}
+
+      {checkoutStatusNotice && !error && (
+        <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-800">
+          {checkoutStatusNotice}
+        </div>
+      )}
+
+      {intentPlan && !dismissedPlanPrompt && (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <p className="text-sm text-amber-900">
+            You selected the <span className="font-semibold">{getPaidPlanLabel(intentPlan)}</span> plan.
+            Start your 14-day trial anytime while keeping leak detection fully active.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              onClick={startTrialCheckout}
+              disabled={startingTrial}
+              className="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-600 disabled:opacity-60"
+              type="button"
+            >
+              {startingTrial ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {startingTrial ? 'Starting checkout…' : `Start ${getPaidPlanLabel(intentPlan)} 14-day trial`}
+            </button>
+            <button
+              onClick={() => setDismissedPlanPrompt(true)}
+              className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100"
+              type="button"
+            >
+              Dismiss
+            </button>
+          </div>
         </div>
       )}
 

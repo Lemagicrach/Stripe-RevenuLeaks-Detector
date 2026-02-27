@@ -1,21 +1,21 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useState } from 'react';
-import { Check, Sparkles, Loader2 } from 'lucide-react';
+import { Suspense, useState } from 'react';
+import { Sparkles } from 'lucide-react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { pricingTiers, PricingTier } from '@/lib/pricing-tiers';
 import { PricingCards } from '@/components/PricingCards';
+import { buildConnectUrl, sanitizePlanId } from '@/lib/plan-flow';
 
 function PricingPageContent() {
   const [monthlyVolume, setMonthlyVolume] = useState(50000);
   const [aiInsights, setAiInsights] = useState(25);
-  const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const planParam = searchParams?.get('plan');
-  const autoPlan = pricingTiers.find((t) => t.planId === planParam);
+  const selectedPlan = sanitizePlanId(searchParams?.get('plan'));
+  const selectedTier = selectedPlan
+    ? pricingTiers.find((tier) => tier.planId === selectedPlan)
+    : null;
 
   const calculatePrice = (tier: PricingTier) => {
     let total = tier.price;
@@ -40,89 +40,6 @@ function PricingPageContent() {
     return `$${value}`;
   };
 
-  const handleUpgrade = useCallback(
-    async (tier: PricingTier) => {
-      if (tier.planId === 'starter') {
-        router.push('/signup');
-        return;
-      }
-
-      if (tier.planId === 'enterprise') {
-        router.push('/contact');
-        return;
-      }
-
-      setLoadingPlan(tier.planId);
-      setError(null);
-
-      try {
-        const response = await fetch('/api/create-checkout', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ plan: tier.planId }),
-        });
-
-        const data = await response.json().catch(() => ({} as any));
-
-        if (!response.ok) {
-          if (response.status === 401) {
-            setError('Please log in to upgrade your plan.');
-            router.push(`/login?redirect=/pricing&plan=${tier.planId}`);
-            return;
-          }
-
-          if (typeof data.error === 'string') {
-            if (data.error.includes('User profile not found')) {
-              setError(
-                'We could not find your user profile. Please log out and log in again, then try upgrading.'
-              );
-            } else if (data.error.includes('Price configuration missing')) {
-              setError(
-                'The selected plan is not fully configured yet. Please try another plan or contact support.'
-              );
-            } else {
-              setError(data.error);
-            }
-          } else {
-            setError('Could not start checkout. Please try again.');
-          }
-
-          setLoadingPlan(null);
-          return;
-        }
-
-        if (data?.url) {
-          window.location.href = data.url;
-        } else {
-          throw new Error('No checkout URL received');
-        }
-      } catch (err) {
-        console.error('Checkout error:', err);
-        setError(
-          err instanceof Error
-            ? err.message
-            : 'Something went wrong. Please try again.'
-        );
-        setLoadingPlan(null);
-      }
-    },
-    [router]
-  );
-
-  // Auto-trigger checkout if plan parameter is present
-  useEffect(() => {
-    if (planParam) {
-      const tier = pricingTiers.find(t => t.planId === planParam);
-      if (tier && tier.planId !== 'starter' && tier.planId !== 'enterprise') {
-        setTimeout(() => {
-          handleUpgrade(tier);
-        }, 500);
-      }
-    }
-  }, [handleUpgrade, planParam]);
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
       <div className="container mx-auto px-4 py-16">
@@ -136,17 +53,20 @@ function PricingPageContent() {
           </p>
         </div>
 
-        {autoPlan && loadingPlan === autoPlan.planId && (
-          <div className="max-w-4xl mx-auto mb-6 bg-indigo-500/10 border border-indigo-500/30 rounded-lg p-4">
-            <p className="text-indigo-200 text-center">
-              Preparing checkout for the <span className="font-semibold">{autoPlan.displayName}</span> plan…
+        {selectedPlan && (
+          <div className="max-w-4xl mx-auto mb-8 rounded-xl border border-emerald-400/40 bg-emerald-500/10 p-5">
+            <p className="text-emerald-200 text-sm md:text-base">
+              {`Selected plan: ${selectedTier?.displayName || selectedPlan}.`}
+              {' '}We connect Stripe first, run your leak scan, then you can start your trial from the leaks dashboard.
             </p>
-          </div>
-        )}
-        {/* Error Message */}
-        {error && (
-          <div className="max-w-4xl mx-auto mb-8 bg-red-500/10 border border-red-500/20 rounded-lg p-4">
-            <p className="text-red-400 text-center">{error}</p>
+            <div className="mt-4">
+              <Link
+                href={buildConnectUrl(selectedPlan)}
+                className="inline-flex items-center rounded-lg bg-emerald-500 px-4 py-2 font-semibold text-white transition hover:bg-emerald-600"
+              >
+                Continue with {selectedTier?.displayName || selectedPlan}
+              </Link>
+            </div>
           </div>
         )}
 
@@ -211,7 +131,7 @@ function PricingPageContent() {
 
         {/* Pricing Tiers */}
         <div className="mb-16">
-          <PricingCards variant="dark" />
+          <PricingCards variant="dark" selectedPlan={selectedPlan} />
         </div>
 
         {/* Comparison Table */}

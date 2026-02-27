@@ -1,9 +1,7 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
-
-const DEFAULT_POST_CONNECT_PATH = '/dashboard/leaks'
-const CONNECT_PATH = `/api/stripe/connect?next=${encodeURIComponent(DEFAULT_POST_CONNECT_PATH)}`
+import { buildPostConnectLeaksUrl, sanitizePlanId } from '@/lib/plan-flow'
 
 function sanitizeRelativePath(path: string | null, fallback: string) {
   if (!path) return fallback
@@ -27,7 +25,10 @@ function clearSupabaseCookies(cookieStore: Awaited<ReturnType<typeof cookies>>, 
 
 export async function GET(req: Request) {
   const url = new URL(req.url)
-  const target = sanitizeRelativePath(url.searchParams.get('redirect'), CONNECT_PATH)
+  const plan = sanitizePlanId(url.searchParams.get('plan'))
+  const postConnectPath = buildPostConnectLeaksUrl(plan, { run_scan: '1' })
+  const connectPath = `/api/stripe/connect?next=${encodeURIComponent(postConnectPath)}`
+  const target = sanitizeRelativePath(url.searchParams.get('redirect'), connectPath)
 
   const cookieStore = await cookies()
   const hasSupabaseCookie = cookieStore.getAll().some(cookie => cookie.name.startsWith('sb-'))
@@ -40,6 +41,18 @@ export async function GET(req: Request) {
     } = await supabase.auth.getUser()
 
     if (user) {
+      const { data: existingConnection } = await supabase
+        .from('stripe_connections')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle()
+
+      if (existingConnection) {
+        return NextResponse.redirect(new URL(postConnectPath, url.origin))
+      }
+
       return NextResponse.redirect(new URL(target, url.origin))
     }
 

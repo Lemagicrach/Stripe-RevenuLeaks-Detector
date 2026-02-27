@@ -1,10 +1,12 @@
 import { pricingTiers } from '@/lib/pricing-tiers'
+import { buildConnectUrl, sanitizePlanId } from '@/lib/plan-flow'
 
 type Variant = 'light' | 'dark'
 
 interface PricingCardsProps {
   variant?: Variant
   showEnterprise?: boolean
+  selectedPlan?: string | null
 }
 
 const baseCardClasses =
@@ -31,28 +33,38 @@ const variants: Record<Variant, { card: string; header: string; body: string; mu
   },
 }
 
-export function PricingCards({ variant = 'light', showEnterprise = true }: PricingCardsProps) {
+export function PricingCards({ variant = 'light', showEnterprise = true, selectedPlan = null }: PricingCardsProps) {
   const theme = variants[variant]
+  const normalizedSelectedPlan = sanitizePlanId(selectedPlan)
+
   const getCtaHref = (planId: string) => {
-    if (planId === 'starter') return '/signup'
+    if (planId === 'starter') return buildConnectUrl()
     if (planId === 'enterprise') return '/contact'
-    return `/pricing?plan=${planId}`
+    return buildConnectUrl(planId)
   }
 
   return (
     <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
       {pricingTiers
         .filter(tier => showEnterprise || tier.planId !== 'enterprise')
-        .map(tier => (
-          <div
-            key={tier.planId}
-            className={`${baseCardClasses} ${theme.card} ${
-              tier.popular ? 'border-indigo-600 shadow-md' : ''
-            }`}
-          >
+        .map(tier => {
+          const isSelected = normalizedSelectedPlan === sanitizePlanId(tier.planId)
+
+          return (
+            <div
+              key={tier.planId}
+              className={`${baseCardClasses} ${theme.card} ${
+                tier.popular ? 'border-indigo-600 shadow-md' : ''
+              } ${isSelected ? 'ring-2 ring-emerald-400 border-emerald-400' : ''}`}
+            >
             {tier.popular && (
               <div className={`absolute -top-4 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full text-sm font-semibold ${theme.badge}`}>
                 Most Popular
+              </div>
+            )}
+            {isSelected && (
+              <div className="absolute -top-4 right-4 rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-white">
+                Selected
               </div>
             )}
             <h3 className={`text-2xl font-bold mb-2 ${theme.header}`}>{tier.displayName}</h3>
@@ -82,7 +94,7 @@ export function PricingCards({ variant = 'light', showEnterprise = true }: Prici
               {tier.cta}
             </a>
           </div>
-        ))}
+        )})}
     </div>
   )
 }

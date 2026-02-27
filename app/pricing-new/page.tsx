@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Check, Sparkles } from 'lucide-react';
 import Link from 'next/link';
+import { buildConnectUrl } from '@/lib/plan-flow';
 
 interface PricingTier {
   name: string;
@@ -246,7 +247,7 @@ export default function PricingPage() {
                 </ul>
 
                 <Link
-                  href={tier.name === 'enterprise' ? '/contact' : '/signup'}
+                  href={tier.name === 'enterprise' ? '/contact' : buildConnectUrl(tier.name)}
                   className={`block w-full py-3 px-4 rounded-lg font-semibold text-center transition-all ${
                     tier.popular
                       ? 'bg-indigo-500 hover:bg-indigo-600 text-white'
@@ -351,7 +352,7 @@ export default function PricingPage() {
             Join hundreds of SaaS founders who trust RevPilot
           </p>
           <Link
-            href="/signup"
+            href="/connect"
             className="inline-block bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-4 px-8 rounded-lg text-lg transition-all"
           >
             Start Free Today

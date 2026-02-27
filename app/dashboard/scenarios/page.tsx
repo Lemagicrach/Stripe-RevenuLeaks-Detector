@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import ScenarioPlannerDashboard from '@/components/scenarios/scenario-planner-dashboard'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { buildConnectUrl } from '@/lib/plan-flow'
 
 export default function ScenariosPage() {
   const router = useRouter()
@@ -151,7 +152,7 @@ export default function ScenariosPage() {
                 <p className="text-2xl font-bold text-blue-600 mb-2">$29/mo</p>
                 <p className="text-sm text-gray-600 mb-3">3 scenarios included</p>
                 <button
-                  onClick={() => router.push('/pricing?plan=pro')}
+                  onClick={() => router.push(buildConnectUrl('professional'))}
                   className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition"
                 >
                   Choose Pro
@@ -162,7 +163,7 @@ export default function ScenariosPage() {
                 <p className="text-2xl font-bold text-green-600 mb-2">$79/mo</p>
                 <p className="text-sm text-gray-600 mb-3">Unlimited scenarios</p>
                 <button
-                  onClick={() => router.push('/pricing?plan=business')}
+                  onClick={() => router.push(buildConnectUrl('business'))}
                   className="w-full px-4 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition"
                 >
                   Choose Business
@@ -193,7 +194,7 @@ export default function ScenariosPage() {
               <p className="text-sm opacity-90">Upgrade to Business for unlimited scenarios</p>
             </div>
             <button
-              onClick={() => router.push('/pricing?plan=business')}
+              onClick={() => router.push(buildConnectUrl('business'))}
               className="px-6 py-2 bg-white text-green-600 rounded-lg font-semibold hover:bg-gray-100 transition"
             >
               Upgrade to Business
@@ -218,7 +219,7 @@ export default function ScenariosPage() {
             </p>
             <div className="flex gap-4 justify-center">
               <a
-                href="/api/stripe/connect"
+                href={buildConnectUrl()}
                 className="px-8 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition"
               >
                 Connect Stripe

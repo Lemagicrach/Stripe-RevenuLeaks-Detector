@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import styles from './page.module.css'
 import { LandingHashScroll } from '@/components/LandingHashScroll'
+import { buildConnectUrl } from '@/lib/plan-flow'
 
 const tickerCards = [
   {
@@ -196,7 +197,7 @@ const pricing = [
       'Email support',
     ],
     ctaText: 'Start 14-day trial →',
-    href: '/pricing?plan=professional',
+    href: buildConnectUrl('professional'),
     featured: true,
     ghost: false,
   },
@@ -213,7 +214,7 @@ const pricing = [
       'Priority support',
     ],
     ctaText: 'Start 14-day trial',
-    href: '/pricing?plan=business',
+    href: buildConnectUrl('business'),
     featured: false,
     ghost: true,
   },
