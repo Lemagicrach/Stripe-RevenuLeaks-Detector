@@ -16,11 +16,23 @@ function normalizeBaseUrl(url: string) {
 }
 
 function getBaseUrl(req: NextRequest) {
+  const requestBaseUrl = `${req.nextUrl.protocol}//${req.nextUrl.host}`
   const configuredBaseUrl = process.env.NEXT_PUBLIC_APP_URL
-  if (configuredBaseUrl) {
-    return normalizeBaseUrl(configuredBaseUrl)
+
+  if (!configuredBaseUrl) {
+    return requestBaseUrl
   }
-  return `${req.nextUrl.protocol}//${req.nextUrl.host}`
+
+  try {
+    const configured = new URL(configuredBaseUrl)
+    // Ignore stale env domains and stick to the domain currently serving the request.
+    if (configured.host !== req.nextUrl.host) {
+      return requestBaseUrl
+    }
+    return normalizeBaseUrl(configured.toString())
+  } catch {
+    return requestBaseUrl
+  }
 }
 
 function getStripeConnectClientId() {
@@ -55,7 +67,15 @@ function decodeOAuthState(state: string | undefined) {
 function getStripeConnectRedirectUri(req: NextRequest, appUrl: string) {
   const explicitRedirectUri = process.env.STRIPE_CONNECT_REDIRECT_URI?.trim()
   if (explicitRedirectUri) {
-    return explicitRedirectUri
+    try {
+      const configured = new URL(explicitRedirectUri)
+      // Prevent redirecting to a legacy domain when env is stale.
+      if (configured.host === req.nextUrl.host) {
+        return explicitRedirectUri
+      }
+    } catch {
+      // fall through to derived URL
+    }
   }
   return `${normalizeBaseUrl(appUrl)}/api/stripe/connect`
 }

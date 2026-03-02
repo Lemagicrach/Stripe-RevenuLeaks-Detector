@@ -44,10 +44,8 @@ function OnboardingContent() {
   const [initialSyncMessage, setInitialSyncMessage] = useState<string | null>(null);
   const [hasTriggeredInitialSync, setHasTriggeredInitialSync] = useState(false);
 
-  // Resolve base URLs. These env vars should be set in the marketing project
-  // to point at the deployed app. Fallbacks allow unified deployment.
+  // Resolve API base URL. When undefined, relative paths are used.
   const API_BASE_URL: string = process.env.NEXT_PUBLIC_API_URL || '';
-  const APP_BASE_URL: string = process.env.NEXT_PUBLIC_APP_URL || '';
 
   const applyConnectionStatus = useCallback((data: ConnectionStatusResponse) => {
     const connected = Boolean(data.hasConnection);
@@ -285,14 +283,13 @@ function OnboardingContent() {
   // initiating and handling OAuth. Setting window.location.href triggers
   // a full page redirect.
   const handleConnectStripe = () => {
-    window.location.href = `${APP_BASE_URL}/connect`;
+    window.location.href = '/connect';
   };
 
   // Navigate to the dashboard on the app domain. We use window.location.href
   // instead of router.push because we may be switching domains.
   const handleGoToDashboard = () => {
-    const destination = `${APP_BASE_URL}/dashboard/leaks`;
-    window.location.href = destination;
+    window.location.href = '/dashboard/leaks';
   };
 
   return (
