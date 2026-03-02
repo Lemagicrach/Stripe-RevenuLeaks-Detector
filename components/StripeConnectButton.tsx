@@ -7,7 +7,7 @@ export default function StripeConnectButton() {
 
   const handleConnect = () => {
     setIsLoading(true)
-    window.location.replace('/api/stripe/connect')
+    window.location.replace('/connect')
   }
 
   return (

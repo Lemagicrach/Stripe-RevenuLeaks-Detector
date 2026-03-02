@@ -285,13 +285,13 @@ function OnboardingContent() {
   // initiating and handling OAuth. Setting window.location.href triggers
   // a full page redirect.
   const handleConnectStripe = () => {
-    window.location.href = `${API_BASE_URL}/api/stripe/connect`;
+    window.location.href = `${APP_BASE_URL}/connect`;
   };
 
   // Navigate to the dashboard on the app domain. We use window.location.href
   // instead of router.push because we may be switching domains.
   const handleGoToDashboard = () => {
-    const destination = `${APP_BASE_URL}/dashboard`;
+    const destination = `${APP_BASE_URL}/dashboard/leaks`;
     window.location.href = destination;
   };
 

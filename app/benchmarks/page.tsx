@@ -95,7 +95,7 @@ export default function BenchmarksPage() {
           </p>
           <div className="flex gap-4 justify-center">
             <a
-              href="/signup"
+              href="/connect"
               className="px-6 py-3 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 transition-colors"
             >
               Get Started Free

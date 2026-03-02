@@ -170,7 +170,7 @@ export default function BenchmarksPage() {
             </p>
             <div className="flex gap-4 justify-center">
               <a
-                href="/api/stripe/connect"
+                href="/connect"
                 className="px-8 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition"
               >
                 Connect Stripe
