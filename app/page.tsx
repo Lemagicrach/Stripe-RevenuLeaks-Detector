@@ -264,13 +264,14 @@ const cellClass = (value: string) => {
 }
 
 type HomePageProps = {
-  searchParams?: {
+  searchParams?: Promise<{
     code?: string
-  }
+  }>
 }
 
-export default function HomePage({ searchParams }: HomePageProps) {
-  const code = searchParams?.code
+export default async function HomePage({ searchParams }: HomePageProps) {
+  const resolvedSearchParams = searchParams ? await searchParams : undefined
+  const code = resolvedSearchParams?.code
   if (code) {
     const callbackParams = new URLSearchParams()
     callbackParams.set('code', code)
