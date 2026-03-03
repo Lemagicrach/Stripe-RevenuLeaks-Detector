@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import styles from './page.module.css'
 import { LandingHashScroll } from '@/components/LandingHashScroll'
 import { buildConnectUrl } from '@/lib/plan-flow'
@@ -262,7 +263,21 @@ const cellClass = (value: string) => {
   return ''
 }
 
-export default function HomePage() {
+type HomePageProps = {
+  searchParams?: {
+    code?: string
+  }
+}
+
+export default function HomePage({ searchParams }: HomePageProps) {
+  const code = searchParams?.code
+  if (code) {
+    const callbackParams = new URLSearchParams()
+    callbackParams.set('code', code)
+    callbackParams.set('redirectTo', '/connect')
+    redirect(`/auth/callback?${callbackParams.toString()}`)
+  }
+
   return (
     <div className={styles.page}>
       <LandingHashScroll />
