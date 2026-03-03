@@ -19,6 +19,7 @@ function clearSupabaseCookies(request: NextRequest, response: NextResponse) {
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
+  const codeParam = request.nextUrl.searchParams.get('code')
 
   // ============================================
   // 1. SECURITY HEADERS - Apply to all requests
@@ -146,7 +147,16 @@ export async function proxy(request: NextRequest) {
     return false
   })
 
-  if (isPublicRoute) {
+  if (isPublicRoute) {
+    // Supabase OAuth can occasionally fall back to "/?code=...".
+    // Normalize that callback so session exchange always happens.
+    if (pathname === '/' && codeParam) {
+      const callbackUrl = new URL('/auth/callback', request.url)
+      callbackUrl.searchParams.set('code', codeParam)
+      callbackUrl.searchParams.set('redirectTo', '/connect')
+      return NextResponse.redirect(callbackUrl)
+    }
+
     return response
   }
 
@@ -268,8 +278,12 @@ export async function proxy(request: NextRequest) {
   const isAuthRoute = authRoutes.includes(pathname)
 
   if (isAuthRoute && user) {
-    // User is already authenticated, redirect to dashboard
-    return NextResponse.redirect(new URL('/dashboard', request.url))
+    const requestedRedirect = request.nextUrl.searchParams.get('redirect')
+    const safeRedirect =
+      requestedRedirect && requestedRedirect.startsWith('/') && !requestedRedirect.startsWith('//')
+        ? requestedRedirect
+        : '/dashboard/leaks'
+    return NextResponse.redirect(new URL(safeRedirect, request.url))
   }
 
   return response
